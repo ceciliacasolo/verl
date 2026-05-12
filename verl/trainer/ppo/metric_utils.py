@@ -166,6 +166,16 @@ def compute_data_metrics(batch: DataProto, use_critic: bool = True) -> dict[str,
         logger.warning("Response mask is all False, returning default advantage metrics")
         adv_mean = adv_max = adv_min = float("nan")
 
+    seq_mask_sum = response_mask.sum(dim=-1).clamp(min=1)
+    sequence_adv = (advantages * response_mask).sum(dim=-1) / seq_mask_sum
+    zero_adv_seq_mask = sequence_adv == 0
+    num_zero_adv = int(zero_adv_seq_mask.sum().item())
+    num_zero_adv_tokens = int(response_mask[zero_adv_seq_mask].sum().item())
+    if zero_adv_seq_mask.any():
+        avg_reward_zero_adv_seq = sequence_reward[zero_adv_seq_mask].float().mean().detach().item()
+    else:
+        avg_reward_zero_adv_seq = float("nan")
+
     if valid_returns.numel() > 0:
         returns_mean = torch.mean(valid_returns).detach().item()
         returns_max = torch.max(valid_returns).detach().item()

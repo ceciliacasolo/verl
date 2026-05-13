@@ -706,20 +706,6 @@ def process_validation_metrics(
                             metric[f"maj@{n}/mean"] = maj_n_mean
                             metric[f"maj@{n}/std"] = maj_n_std
 
-                # pass@k: computed for binary variables (values in {0, 1})
-                unique_vals = set(var_vals)
-                if n_resps > 1 and unique_vals <= {0, 0.0, 1, 1.0}:
-                    c = sum(1 for v in var_vals if v == 1 or v == 1.0)
-                    ns = []
-                    n = 1
-                    while n < n_resps:
-                        ns.append(n)
-                        n *= 2
-                    ns.append(n_resps)
-                    for k in ns:
-                        if k <= n_resps:
-                            metric[f"pass@{k}"] = _pass_at_k(n_resps, c, k)
-
                 var_dict[var_name] = metric
 
     # Aggregate metrics across uids

@@ -108,6 +108,7 @@ class AdvantageEstimator(str, Enum):
     OPTIMAL_TOKEN_BASELINE = "optimal_token_baseline"
     TIR_OPTIMAL_TOKEN_BASELINE = "tir_optimal_token_baseline"
     GDPO = "gdpo"
+    MAXRL = "maxrl"
 
 
 ADV_ESTIMATOR_REGISTRY: dict[str, Any] = {}
@@ -326,6 +327,48 @@ def compute_grpo_outcome_advantage(
                 scores[i] = (scores[i] - id2mean[index[i]]) / (id2std[index[i]] + epsilon)
             else:
                 scores[i] = scores[i] - id2mean[index[i]]
+        scores = scores.unsqueeze(-1) * response_mask
+
+    return scores, scores
+
+
+@register_adv_est(AdvantageEstimator.MAXRL)
+def compute_maxrl_outcome_advantage(
+    token_level_rewards: torch.Tensor,
+    response_mask: torch.Tensor,
+    index: np.ndarray,
+    epsilon: float = 1e-6,
+    config: Optional[AlgoConfig] = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Compute advantage for MaxRL, operating only on outcome reward (one scalar reward per response). See compute_grpo_outcome_advantage. 
+
+    MaxRL differs from GRPO only in the advantage normalization: the group-relative
+    advantage is divided by the group mean reward instead of the group std. When the
+    group mean is zero (no successful rollouts), the advantage is set to zero.
+    """
+    scores = token_level_rewards.sum(dim=-1)
+
+    id2score = defaultdict(list)
+    id2mean = {}
+
+    with torch.no_grad():
+        bsz = scores.shape[0]
+        for i in range(bsz):
+            id2score[index[i]].append(scores[i])
+        for idx in id2score:
+            if len(id2score[idx]) == 1:
+                id2mean[idx] = id2score[idx][0]
+            elif len(id2score[idx]) > 1:
+                id2mean[idx] = torch.mean(torch.stack(id2score[idx]))
+            else:
+                raise ValueError(f"no score in prompt index: {idx}")
+        for i in range(bsz):
+            mean = id2mean[index[i]]
+            if mean.item() <= 0:
+                scores[i] = torch.zeros_like(scores[i])
+            else:
+                scores[i] = (scores[i] - mean) / (mean + epsilon)
         scores = scores.unsqueeze(-1) * response_mask
 
     return scores, scores

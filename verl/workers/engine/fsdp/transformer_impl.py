@@ -1250,7 +1250,17 @@ class FSDPEngineWithLMHead(FSDPEngine):
 
                 if calculate_entropy:
                     if not self.engine_config.entropy_checkpointing:
-                        entropy = verl_F.entropy_from_logits(logits)
+                        if self.engine_config.entropy_from_logits_with_chunking:
+                            # Large-vocab models (e.g. Qwen3.5, 248k vocab) OOM when entropy
+                            # is computed over the full (bsz, resp_len, vocab) logits at once.
+                            # Chunk along the flattened token dim, then restore (bsz, resp_len).
+                            bsz_, seqlen_, vocab_ = logits.shape
+                            entropy = verl_F.entropy_from_logits_with_chunking(
+                                logits.reshape(-1, vocab_),
+                                chunk_size=self.engine_config.entropy_from_logits_chunk_size,
+                            ).reshape(bsz_, seqlen_)
+                        else:
+                            entropy = verl_F.entropy_from_logits(logits)
                     else:
                         entropy = torch.utils.checkpoint.checkpoint(verl_F.entropy_from_logits, logits)
 
